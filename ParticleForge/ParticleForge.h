@@ -72,6 +72,7 @@ enum {
 	PARAM_LIFE_RANDOM,
 	PARAM_PARTICLE_TYPE,
 	PARAM_TEXTURE_LAYER,		// PF_Param_LAYER, used when type == Texture
+	PARAM_TEXTURE_TIME,			// Texture time sampling (Still / loop / random)
 	PARAM_SIZE,
 	PARAM_SIZE_RANDOM,
 	PARAM_SIZE_OVER_LIFE,
@@ -166,12 +167,14 @@ enum {
 	ID_TRAIL_LIFE,
 	ID_TRAIL_SIZE,
 	ID_TRAIL_OPACITY,
-	ID_TRAIL_INHERIT_VEL
+	ID_TRAIL_INHERIT_VEL,
+	ID_TEXTURE_TIME
 };
 
 // Popup string lists (1-based)
 #define EMITTER_TYPE_CHOICES	"Point|Box|Sphere"
 #define PARTICLE_TYPE_CHOICES	"Sphere|Glow Sphere|Star|Texture"
+#define TEXTURE_TIME_CHOICES	"Still Frame|Start at Birth - Loop|Random Start - Loop|Random Still Frame"
 #define SIZE_CURVE_CHOICES		"Constant|Grow|Shrink|Grow then Shrink|Bell"
 #define OPACITY_CURVE_CHOICES	"Constant|Fade In|Fade Out|Fade In and Out|Bell"
 #define BLEND_MODE_CHOICES		"Add|Normal|Screen"

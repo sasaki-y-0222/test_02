@@ -245,6 +245,7 @@ static PF_Err ParamsSetup(
 	err |= AddFloat(in_data, "Life Random", 0, 100, 0, 100, 20, 1, ID_LIFE_RANDOM);
 	err |= AddPopup(in_data, "Particle Type", 4, pf::kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
 	err |= AddLayer(in_data, "Texture Layer", ID_TEXTURE_LAYER);
+	err |= AddPopup(in_data, "Texture Time Sampling", 4, pf::kTexTime_Still, TEXTURE_TIME_CHOICES, ID_TEXTURE_TIME);
 	err |= AddFloat(in_data, "Size", 0, 500, 0, 100, 12, 1, ID_SIZE);
 	err |= AddFloat(in_data, "Size Random", 0, 100, 0, 100, 30, 1, ID_SIZE_RANDOM);
 	err |= AddPopup(in_data, "Size over Life", 5, pf::kCurve_Constant, SIZE_CURVE_CHOICES, ID_SIZE_OVER_LIFE);
@@ -612,6 +613,7 @@ static PF_Err Render(
 	sp.life				= params[PARAM_LIFE]->u.fs_d.value;
 	sp.lifeRandom		= params[PARAM_LIFE_RANDOM]->u.fs_d.value / 100.0;
 	sp.particleType		= params[PARAM_PARTICLE_TYPE]->u.pd.value;
+	sp.texTimeSampling	= params[PARAM_TEXTURE_TIME]->u.pd.value;
 	sp.size				= params[PARAM_SIZE]->u.fs_d.value * ds;
 	sp.sizeRandom		= params[PARAM_SIZE_RANDOM]->u.fs_d.value / 100.0;
 	sp.sizeOverLife		= params[PARAM_SIZE_OVER_LIFE]->u.pd.value;
@@ -652,6 +654,12 @@ static PF_Err Render(
 						: (1.0 / 30.0);
 	sp.frameRate = (frameDur > 0.0) ? (1.0 / frameDur) : 30.0;
 
+	// Texture loop length: the duration of the layer this effect is applied to.
+	// The source frame rate is approximated by the comp frame rate (used below to
+	// quantise checkout times). 0 = no looping (treat the source as one frame).
+	sp.texLoopDur = (timeScale > 0.0 && in_data->total_time > 0)
+						? (double)in_data->total_time / timeScale : 0.0;
+
 	// projection
 	sp.centerX = output->width  * 0.5;
 	sp.centerY = output->height * 0.5;
@@ -661,22 +669,65 @@ static PF_Err Render(
 	std::vector<pf::RParticle> particles;
 	pf::Simulate(sp, particles);
 
-	// --- check out the texture layer (only needed for Texture particles) ---
-	// The checked-out world shares the render's bit depth. If no layer is
-	// selected the checkout still succeeds but u.ld.data is NULL, in which case
-	// CompositeParticle() falls back to a Glow Sphere.
-	PF_ParamDef texParam;
-	AEFX_CLR_STRUCT(texParam);
-	bool texCheckedOut = false;
-	if (sp.particleType == pf::kParticle_Texture) {
+	// --- texture frame cache (only needed for Texture particles) -----------
+	// Different particles may want different source frames (Time Sampling). To
+	// avoid a ruinous per-particle PF_CHECKOUT_PARAM we quantise each requested
+	// source time to a comp frame, so particles asking for the same frame share
+	// one checkout, and cache the result keyed by frame time. A hard cap bounds
+	// the number of distinct checkouts per render; once it is hit further frames
+	// reuse the nearest already-checked-out frame. Each checked-out world shares
+	// the render's bit depth and is checked back in at the end.
+	const bool isTex = (sp.particleType == pf::kParticle_Texture);
+	const int  kMaxTexCheckouts = 64;
+
+	struct TexFrame { A_long timeT; PF_ParamDef def; };
+	std::vector<TexFrame> texCache;
+	if (isTex) texCache.reserve(kMaxTexCheckouts);	// keep element pointers stable
+
+	const double tsc  = (double)in_data->time_scale;
+	const A_long step = in_data->time_step;
+
+	// Map a particle's requested source time (seconds; <0 = current frame) to a
+	// quantised comp-frame time in time_scale units, clamped to the layer span.
+	auto quantizeTicks = [&](double sampleSec) -> A_long {
+		if (sampleSec < 0.0 || step <= 0 || tsc <= 0.0)
+			return in_data->current_time;
+		double frames = sampleSec * tsc / (double)step;
+		A_long t = (A_long)std::floor(frames + 0.5) * step;
+		if (t < 0) t = 0;
+		if (in_data->total_time > 0 && t > in_data->total_time)
+			t = in_data->total_time;
+		return t;
+	};
+
+	// Get (checking out on demand) the source world for a requested time, or
+	// NULL when no layer is set / the checkout fails / the source is empty.
+	auto getTexWorld = [&](double sampleSec) -> const PF_LayerDef* {
+		if (!isTex) return NULL;
+		A_long t = quantizeTicks(sampleSec);
+		for (TexFrame &f : texCache)
+			if (f.timeT == t)
+				return f.def.u.ld.data ? &f.def.u.ld : NULL;
+
+		if ((int)texCache.size() >= kMaxTexCheckouts) {
+			// cap reached: reuse the closest already-checked-out frame
+			const PF_LayerDef *best = NULL; A_long bestD = 0x7fffffff;
+			for (TexFrame &f : texCache) {
+				A_long d = f.timeT > t ? (f.timeT - t) : (t - f.timeT);
+				if (f.def.u.ld.data && d < bestD) { bestD = d; best = &f.def.u.ld; }
+			}
+			return best;
+		}
+
+		TexFrame nf;
+		AEFX_CLR_STRUCT(nf.def);
+		nf.timeT = t;
 		PF_Err texErr = PF_CHECKOUT_PARAM(in_data, PARAM_TEXTURE_LAYER,
-								in_data->current_time, in_data->time_step,
-								in_data->time_scale, &texParam);
-		if (!texErr)
-			texCheckedOut = true;
-	}
-	const PF_LayerDef *tex =
-		(texCheckedOut && texParam.u.ld.data) ? &texParam.u.ld : NULL;
+								t, in_data->time_step, in_data->time_scale, &nf.def);
+		if (texErr) return NULL;	// don't cache (nor check in) a failed checkout
+		texCache.push_back(nf);
+		return texCache.back().def.u.ld.data ? &texCache.back().def.u.ld : NULL;
+	};
 
 	// --- build the output --------------------------------------------------
 	PF_LayerDef *input = &params[PARAM_INPUT]->u.ld;
@@ -687,17 +738,17 @@ static PF_Err Render(
 		CopyInput<PF_Pixel16>(input, output);
 		const double maxv = (double)PF_MAX_CHAN16;
 		for (const pf::RParticle &p : particles)
-			CompositeParticle<PF_Pixel16>(output, tex, p, sp.blendMode, maxv);
+			CompositeParticle<PF_Pixel16>(output, getTexWorld(p.texSampleTime), p, sp.blendMode, maxv);
 	} else {
 		ClearWorld<PF_Pixel8>(output);
 		CopyInput<PF_Pixel8>(input, output);
 		const double maxv = (double)PF_MAX_CHAN8;
 		for (const pf::RParticle &p : particles)
-			CompositeParticle<PF_Pixel8>(output, tex, p, sp.blendMode, maxv);
+			CompositeParticle<PF_Pixel8>(output, getTexWorld(p.texSampleTime), p, sp.blendMode, maxv);
 	}
 
-	if (texCheckedOut)
-		PF_CHECKIN_PARAM(in_data, &texParam);
+	for (TexFrame &f : texCache)
+		PF_CHECKIN_PARAM(in_data, &f.def);
 
 	return err;
 }

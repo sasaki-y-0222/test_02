@@ -107,6 +107,36 @@ void EmitterOffset(const SimParams& p, Rng& rng, double& ox, double& oy, double&
 	}
 }
 
+// Decide which source time (in seconds) a Texture particle should sample,
+// given its stable id and current age. Returns a negative sentinel for the
+// "Still" mode, which the AE glue maps to the current comp frame. The random
+// modes hash the particle id + seed so the choice is stable under scrubbing,
+// matching the deterministic scheme used elsewhere in the simulation.
+double TexSampleTime(const SimParams& p, uint32_t id, double age)
+{
+	const double loop = p.texLoopDur;
+	const double e    = age > 0.0 ? age : 0.0;
+	switch (p.texTimeSampling) {
+		case kTexTime_BirthLoop:
+			return (loop > 0.0) ? std::fmod(e, loop) : e;
+		case kTexTime_RandomLoop: {
+			double off = HashToUnit(HashU32((id * 2654435761U) ^
+								(p.randomSeed * 2246822519U + 0x517CC1B7U)))
+						 * (loop > 0.0 ? loop : 1.0);
+			double s = off + e;
+			return (loop > 0.0) ? std::fmod(s, loop) : s;
+		}
+		case kTexTime_RandomStill: {
+			double fr = HashToUnit(HashU32((id * 40503U) ^
+								(p.randomSeed * 668265263U + 0x27D4EB2FU)));
+			return fr * (loop > 0.0 ? loop : 0.0);
+		}
+		case kTexTime_Still:
+		default:
+			return -1.0;	// sentinel: use the current comp frame
+	}
+}
+
 // Initial velocity vector based on direction, spread and randomness.
 void InitialVelocity(const SimParams& p, Rng& rng, double& vx, double& vy, double& vz)
 {
@@ -373,6 +403,7 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = p.particleType;
 		rp.depth = pt.pz;
+		rp.texSampleTime = TexSampleTime(p, pt.id, age);
 
 		if (rp.radius < 0.25) continue;
 		out.push_back(rp);
@@ -403,6 +434,7 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = kParticle_GlowSphere;
 		rp.depth = c.pz;
+		rp.texSampleTime = -1.0;
 
 		if (rp.radius < 0.25) continue;
 		out.push_back(rp);

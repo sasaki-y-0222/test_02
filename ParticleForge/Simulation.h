@@ -49,6 +49,16 @@ enum BlendMode {
 	kBlend_Screen = 3
 };
 
+// How a Texture particle samples its source layer over time. The simulation
+// only decides *which source time* each particle wants (in seconds); the AE
+// glue is responsible for actually checking the layer out at that time.
+enum TexTimeSampling {
+	kTexTime_Still       = 1,	// always the current comp frame (legacy behaviour)
+	kTexTime_BirthLoop   = 2,	// play from the particle's birth, looping at the end
+	kTexTime_RandomLoop  = 3,	// per-particle random start frame, looping
+	kTexTime_RandomStill = 4	// per-particle random single frame, frozen
+};
+
 struct SimParams {
 	// Emitter
 	double  particlesPerSec;
@@ -65,6 +75,8 @@ struct SimParams {
 	double  life;						// seconds
 	double  lifeRandom;					// 0..1
 	int     particleType;
+	int     texTimeSampling;			// TexTimeSampling (Texture particles only)
+	double  texLoopDur;					// seconds; source length used for looping (0 = none)
 	double  size;						// px
 	double  sizeRandom;					// 0..1
 	int     sizeOverLife;				// LifeCurve
@@ -109,6 +121,8 @@ struct RParticle {
 	double  a;			// 0..1 opacity
 	int     type;		// ParticleType
 	double  depth;		// camera-space Z (for back-to-front sorting)
+	double  texSampleTime;	// Texture: source time to sample, in seconds
+							// (<0 = sample the current comp frame)
 };
 
 // Run the simulation and fill 'out' with the particles alive at currentTime.
