@@ -94,6 +94,16 @@ enum {
 	PARAM_TURB_EVOLUTION,
 	PARAM_PHYSICS_GROUP_END,	// GROUP_END
 
+	// --- Trail (aux particles) ---------------------------------------------
+	PARAM_TRAIL_GROUP,			// GROUP_START
+	PARAM_TRAIL_ENABLE,			// PF_Param_CHECKBOX
+	PARAM_TRAIL_PPS,			// child particles per second, per parent
+	PARAM_TRAIL_LIFE,
+	PARAM_TRAIL_SIZE,
+	PARAM_TRAIL_OPACITY,
+	PARAM_TRAIL_INHERIT_VEL,	// % of parent velocity inherited
+	PARAM_TRAIL_GROUP_END,		// GROUP_END
+
 	// --- Global ------------------------------------------------------------
 	PARAM_GLOBAL_GROUP,			// GROUP_START
 	PARAM_RANDOM_SEED,
@@ -148,7 +158,15 @@ enum {
 	ID_PHYSICS_GROUP_END,
 	ID_GLOBAL_GROUP,
 	ID_GLOBAL_GROUP_END,
-	ID_TEXTURE_LAYER
+	ID_TEXTURE_LAYER,
+	ID_TRAIL_GROUP,
+	ID_TRAIL_GROUP_END,
+	ID_TRAIL_ENABLE,
+	ID_TRAIL_PPS,
+	ID_TRAIL_LIFE,
+	ID_TRAIL_SIZE,
+	ID_TRAIL_OPACITY,
+	ID_TRAIL_INHERIT_VEL
 };
 
 // Popup string lists (1-based)

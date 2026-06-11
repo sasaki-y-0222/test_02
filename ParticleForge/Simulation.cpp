@@ -61,6 +61,22 @@ struct Particle {
 	double r0, g0, b0;	// birth colour
 	double r1, g1, b1;	// death colour
 	double opacityScale;
+	uint32_t id;		// stable id for deterministic trail seeding
+	double trailAccum;	// fractional trail-spawn accumulator
+	uint32_t trailCount;// number of trail children emitted so far
+	bool   alive;
+};
+
+// Trail (aux) child particle. Children never spawn children of their own and
+// carry a single constant colour (sampled from the parent at emission time).
+struct Child {
+	double px, py, pz;
+	double vx, vy, vz;
+	double birthTime;
+	double life;
+	double baseSize;
+	double r, g, b;
+	double opacityScale;
 	bool   alive;
 };
 
@@ -148,6 +164,10 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 	std::vector<Particle> live;
 	live.reserve(1024);
 
+	std::vector<Child> trail;
+	const bool trailOn = (p.trailEnable != 0) &&
+						 (p.trailParticlesPerSec > 0.0) && (p.trailLife > 0.0);
+
 	double spawnAccum = 0.0;
 	uint32_t nextId = 0;
 
@@ -179,6 +199,9 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 			pt.r0 = p.colorBirth[0]; pt.g0 = p.colorBirth[1]; pt.b0 = p.colorBirth[2];
 			pt.r1 = p.colorDeath[0]; pt.g1 = p.colorDeath[1]; pt.b1 = p.colorDeath[2];
 			pt.opacityScale = p.opacity;
+			pt.id         = id;
+			pt.trailAccum = 0.0;
+			pt.trailCount = 0;
 			pt.alive = true;
 
 			live.push_back(pt);
@@ -196,6 +219,39 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 			if (!pt.alive) continue;
 			double age = t - pt.birthTime;
 			if (age > pt.life) { pt.alive = false; continue; }
+
+			// --- shed trail (aux) children along the parent's path --------
+			if (trailOn) {
+				pt.trailAccum += p.trailParticlesPerSec * dt;
+				int nChild = static_cast<int>(pt.trailAccum);
+				pt.trailAccum -= nChild;
+
+				double fpar = pt.life > 0.0 ? (age / pt.life) : 0.0;
+				double cr = pt.r0 + (pt.r1 - pt.r0) * fpar;
+				double cg = pt.g0 + (pt.g1 - pt.g0) * fpar;
+				double cb = pt.b0 + (pt.b1 - pt.b0) * fpar;
+
+				for (int k = 0; k < nChild && trail.size() < kMaxAlive; ++k) {
+					Rng crng(HashU32((pt.id * 2246822519U) ^
+									 ((pt.trailCount++ + 1U) * 3266489917U) ^
+									 (p.randomSeed * 668265263U)));
+
+					Child c;
+					c.px = pt.px; c.py = pt.py; c.pz = pt.pz;
+					// inherit a fraction of parent velocity plus a little jitter
+					double jitter = p.velocity * 0.04;
+					c.vx = pt.vx * p.trailInheritVel + crng.signed1() * jitter;
+					c.vy = pt.vy * p.trailInheritVel + crng.signed1() * jitter;
+					c.vz = pt.vz * p.trailInheritVel + crng.signed1() * jitter;
+					c.birthTime    = t;
+					c.life         = p.trailLife * (1.0 + crng.signed1() * 0.2);
+					c.baseSize     = p.trailSize;
+					c.r = cr; c.g = cg; c.b = cb;
+					c.opacityScale = p.trailOpacity;
+					c.alive        = true;
+					trail.push_back(c);
+				}
+			}
 
 			// gravity + wind
 			pt.vy += p.gravity * dt;
@@ -238,11 +294,49 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 			pt.pz += pt.vz * dt;
 		}
 
+		// --- integrate trail children (same forces, no spin, no spawning) -
+		for (Child& c : trail) {
+			if (!c.alive) continue;
+			double cage = t - c.birthTime;
+			if (cage > c.life) { c.alive = false; continue; }
+
+			c.vy += p.gravity * dt;
+			c.vx += p.windX * dt;
+			c.vy += p.windY * dt;
+
+			if (p.turbAmount != 0.0) {
+				double nx = FractalNoise3(c.px * p.turbScale,
+										  c.py * p.turbScale,
+										  c.pz * p.turbScale + p.turbEvolution);
+				double ny = FractalNoise3(c.px * p.turbScale + 71.3,
+										  c.py * p.turbScale - 12.7,
+										  c.pz * p.turbScale + p.turbEvolution + 4.2);
+				double nz = FractalNoise3(c.px * p.turbScale - 33.1,
+										  c.py * p.turbScale + 91.5,
+										  c.pz * p.turbScale + p.turbEvolution - 8.9);
+				c.vx += nx * p.turbAmount * dt;
+				c.vy += ny * p.turbAmount * dt;
+				c.vz += nz * p.turbAmount * dt;
+			}
+
+			c.vx *= airFactor;
+			c.vy *= airFactor;
+			c.vz *= airFactor;
+
+			c.px += c.vx * dt;
+			c.py += c.vy * dt;
+			c.pz += c.vz * dt;
+		}
+
 		// periodic compaction of dead particles
 		if ((step & 31) == 0) {
 			live.erase(std::remove_if(live.begin(), live.end(),
 						[](const Particle& q){ return !q.alive; }),
 					   live.end());
+			if (trailOn)
+				trail.erase(std::remove_if(trail.begin(), trail.end(),
+							[](const Child& q){ return !q.alive; }),
+						   trail.end());
 		}
 	}
 
@@ -279,6 +373,36 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = p.particleType;
 		rp.depth = pt.pz;
+
+		if (rp.radius < 0.25) continue;
+		out.push_back(rp);
+	}
+
+	// --- project alive trail children (rendered as soft glow spheres) -----
+	for (const Child& c : trail) {
+		if (!c.alive) continue;
+		double cage = tNow - c.birthTime;
+		if (cage < 0.0 || cage > c.life) continue;
+		double f = cage / c.life;
+
+		if (c.baseSize <= 0.05) continue;
+
+		// children fade out over their life
+		double opa = c.opacityScale * EvalCurve(f, kCurve_FadeOut);
+		if (opa <= 0.0) continue;
+
+		double denom = p.focalLength + c.pz;
+		if (denom <= 1.0) continue;
+		double scale = p.focalLength / denom;
+
+		RParticle rp;
+		rp.x = p.centerX + (c.px - p.centerX) * scale;
+		rp.y = p.centerY + (c.py - p.centerY) * scale;
+		rp.radius = c.baseSize * scale * 0.5;
+		rp.r = c.r; rp.g = c.g; rp.b = c.b;
+		rp.a = Clamp(opa, 0.0, 1.0);
+		rp.type = kParticle_GlowSphere;
+		rp.depth = c.pz;
 
 		if (rp.radius < 0.25) continue;
 		out.push_back(rp);

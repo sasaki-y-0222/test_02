@@ -128,6 +128,20 @@ static PF_Err AddPopup(
 	return PF_ADD_PARAM(in_data, -1, &def);
 }
 
+static PF_Err AddCheckbox(
+	PF_InData *in_data, const char *name, bool dflt, A_long id)
+{
+	PF_ParamDef def;
+	AEFX_CLR_STRUCT(def);
+	def.param_type	= PF_Param_CHECKBOX;
+	PF_STRCPY(def.name, name);
+	def.uu.id		= id;
+	def.u.bd.value		= dflt;
+	def.u.bd.dephault	= dflt;
+	def.u.bd.u.nameptr	= "";
+	return PF_ADD_PARAM(in_data, -1, &def);
+}
+
 static PF_Err AddLayer(PF_InData *in_data, const char *name, A_long id)
 {
 	PF_ParamDef def;
@@ -252,6 +266,16 @@ static PF_Err ParamsSetup(
 	err |= AddFloat(in_data, "Turbulence Scale", 0.0001, 0.05, 0.0005, 0.02, 0.004, 4, ID_TURB_SCALE);
 	err |= AddFloat(in_data, "Turbulence Evolution", -10000, 10000, 0, 100, 0, 2, ID_TURB_EVOLUTION);
 	err |= AddGroupEnd(in_data, ID_PHYSICS_GROUP_END);
+
+	// ---- Trail (aux particles) -------------------------------------------
+	err |= AddGroupStart(in_data, "Trail", ID_TRAIL_GROUP);
+	err |= AddCheckbox(in_data, "Enable", false, ID_TRAIL_ENABLE);
+	err |= AddFloat(in_data, "Particles / sec", 0, 5000, 0, 200, 30, 1, ID_TRAIL_PPS);
+	err |= AddFloat(in_data, "Life [sec]", 0.05, 30, 0.05, 5, 1.0, 2, ID_TRAIL_LIFE);
+	err |= AddFloat(in_data, "Size", 0, 500, 0, 50, 4, 1, ID_TRAIL_SIZE);
+	err |= AddFloat(in_data, "Opacity", 0, 100, 0, 100, 60, 1, ID_TRAIL_OPACITY);
+	err |= AddFloat(in_data, "Inherit Velocity", 0, 100, 0, 100, 30, 1, ID_TRAIL_INHERIT_VEL);
+	err |= AddGroupEnd(in_data, ID_TRAIL_GROUP_END);
 
 	// ---- Global -----------------------------------------------------------
 	err |= AddGroupStart(in_data, "Global", ID_GLOBAL_GROUP);
@@ -610,6 +634,13 @@ static PF_Err Render(
 	sp.turbAmount		= params[PARAM_TURB_AMOUNT]->u.fs_d.value * ds;
 	sp.turbScale		= params[PARAM_TURB_SCALE]->u.fs_d.value / ds;	// keep look across resolutions
 	sp.turbEvolution	= params[PARAM_TURB_EVOLUTION]->u.fs_d.value;
+
+	sp.trailEnable			= params[PARAM_TRAIL_ENABLE]->u.bd.value ? 1 : 0;
+	sp.trailParticlesPerSec	= params[PARAM_TRAIL_PPS]->u.fs_d.value;
+	sp.trailLife			= params[PARAM_TRAIL_LIFE]->u.fs_d.value;
+	sp.trailSize			= params[PARAM_TRAIL_SIZE]->u.fs_d.value * ds;
+	sp.trailOpacity			= params[PARAM_TRAIL_OPACITY]->u.fs_d.value / 100.0;
+	sp.trailInheritVel		= params[PARAM_TRAIL_INHERIT_VEL]->u.fs_d.value / 100.0;
 
 	sp.randomSeed		= (unsigned int)(params[PARAM_RANDOM_SEED]->u.fs_d.value + 0.5);
 

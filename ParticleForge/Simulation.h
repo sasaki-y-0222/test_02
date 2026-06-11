@@ -83,6 +83,14 @@ struct SimParams {
 	double  turbScale;					// spatial frequency (1/px)
 	double  turbEvolution;				// time offset into the noise field
 
+	// Trail (aux particles) — children shed along each parent's path
+	int     trailEnable;				// 0/1
+	double  trailParticlesPerSec;		// children spawned per parent per second
+	double  trailLife;					// seconds
+	double  trailSize;					// px
+	double  trailOpacity;				// 0..1
+	double  trailInheritVel;			// 0..1 fraction of parent velocity
+
 	// Global
 	unsigned int randomSeed;
 	double  frameRate;					// simulation steps per second
