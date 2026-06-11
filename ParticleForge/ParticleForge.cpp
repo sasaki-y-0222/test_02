@@ -249,6 +249,10 @@ static PF_Err ParamsSetup(
 	err |= AddFloat(in_data, "Size", 0, 500, 0, 100, 12, 1, ID_SIZE);
 	err |= AddFloat(in_data, "Size Random", 0, 100, 0, 100, 30, 1, ID_SIZE_RANDOM);
 	err |= AddPopup(in_data, "Size over Life", 5, pf::kCurve_Constant, SIZE_CURVE_CHOICES, ID_SIZE_OVER_LIFE);
+	err |= AddFloat(in_data, "Rotation", -3600, 3600, -360, 360, 0, 1, ID_ROTATION);
+	err |= AddFloat(in_data, "Rotation Random", 0, 100, 0, 100, 0, 1, ID_ROTATION_RANDOM);
+	err |= AddFloat(in_data, "Rotation Speed", -3600, 3600, -360, 360, 0, 1, ID_ROTATION_SPEED);
+	err |= AddFloat(in_data, "Rotation Speed Random", 0, 100, 0, 100, 0, 1, ID_ROTATION_SPEED_RANDOM);
 	err |= AddFloat(in_data, "Opacity", 0, 100, 0, 100, 100, 1, ID_OPACITY);
 	err |= AddPopup(in_data, "Opacity over Life", 5, pf::kCurve_FadeOut, OPACITY_CURVE_CHOICES, ID_OPACITY_OVER_LIFE);
 	err |= AddColor(in_data, "Birth Color", 255, 220, 120, ID_COLOR_BIRTH);
@@ -377,6 +381,7 @@ static void DrawParticle(PF_LayerDef *out, const pf::RParticle &p, int blendMode
 
 	const double s = p.radius * 0.6;
 	const double twoSigma2 = 2.0 * s * s + 1e-6;
+	const double ca = std::cos(p.angle), sa = std::sin(p.angle);	// Star spike rotation
 
 	for (A_long y = y0; y <= y1; ++y) {
 		PixT *row = reinterpret_cast<PixT*>(
@@ -393,12 +398,15 @@ static void DrawParticle(PF_LayerDef *out, const pf::RParticle &p, int blendMode
 				if (cov <= 0.0) continue;
 				if (cov > 1.0) cov = 1.0;
 			} else if (p.type == pf::kParticle_Star) {	// glow core + axial spikes
+				// rotate the sample offset into the (un-spun) spike frame
+				double rdx = dx * ca + dy * sa;
+				double rdy = -dx * sa + dy * ca;
 				double base = std::exp(-dist2 / twoSigma2);
 				double sc   = s * 0.30 + 0.5;
-				double spx  = std::exp(-(dy * dy) / (2.0 * sc * sc)) *
-							  std::exp(-std::fabs(dx) / (p.radius * 1.2 + 1.0));
-				double spy  = std::exp(-(dx * dx) / (2.0 * sc * sc)) *
-							  std::exp(-std::fabs(dy) / (p.radius * 1.2 + 1.0));
+				double spx  = std::exp(-(rdy * rdy) / (2.0 * sc * sc)) *
+							  std::exp(-std::fabs(rdx) / (p.radius * 1.2 + 1.0));
+				double spy  = std::exp(-(rdx * rdx) / (2.0 * sc * sc)) *
+							  std::exp(-std::fabs(rdy) / (p.radius * 1.2 + 1.0));
 				cov = std::max(base, std::max(spx, spy));
 				if (cov < 0.004) continue;
 			} else {	// GlowSphere, or Texture with no layer selected (fallback)
@@ -491,9 +499,9 @@ static void DrawParticleTexture(PF_LayerDef *out, const PF_LayerDef *tex,
 	const double diam = 2.0 * rad;
 	if (diam <= 0.0) return;
 
-	const double left = p.x - rad;
-	const double top  = p.y - rad;
-	const double ext  = rad + 1.0;
+	// A rotated sprite's corners reach out to rad*sqrt(2), so widen the bounds.
+	const double ext  = rad * 1.41421356 + 1.0;
+	const double ca = std::cos(p.angle), sa = std::sin(p.angle);	// UV rotation
 
 	A_long x0 = (A_long)std::floor(p.x - ext);
 	A_long x1 = (A_long)std::ceil (p.x + ext);
@@ -512,12 +520,16 @@ static void DrawParticleTexture(PF_LayerDef *out, const PF_LayerDef *tex,
 	for (A_long y = y0; y <= y1; ++y) {
 		PixT *outRow = reinterpret_cast<PixT*>(
 			reinterpret_cast<char*>(out->data) + (size_t)y * out->rowbytes);
-		const double v = ((y + 0.5) - top) / diam;
-		if (v < 0.0 || v > 1.0) continue;
+		const double cy = (y + 0.5) - p.y;
 
 		for (A_long x = x0; x <= x1; ++x) {
-			const double u = ((x + 0.5) - left) / diam;
-			if (u < 0.0 || u > 1.0) continue;
+			const double cx = (x + 0.5) - p.x;
+			// rotate the centred offset into sprite space, then to [0,1] UV
+			const double rx =  cx * ca + cy * sa;
+			const double ry = -cx * sa + cy * ca;
+			const double u = (rx + rad) / diam;
+			const double v = (ry + rad) / diam;
+			if (u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0) continue;
 
 			double tr, tg, tb, ta;
 			SampleBilinear<PixT>(tex, u * texMaxX, v * texMaxY, maxv, tr, tg, tb, ta);
@@ -617,6 +629,10 @@ static PF_Err Render(
 	sp.size				= params[PARAM_SIZE]->u.fs_d.value * ds;
 	sp.sizeRandom		= params[PARAM_SIZE_RANDOM]->u.fs_d.value / 100.0;
 	sp.sizeOverLife		= params[PARAM_SIZE_OVER_LIFE]->u.pd.value;
+	sp.rotation				= params[PARAM_ROTATION]->u.fs_d.value;
+	sp.rotationRandom		= params[PARAM_ROTATION_RANDOM]->u.fs_d.value / 100.0;
+	sp.rotationSpeed		= params[PARAM_ROTATION_SPEED]->u.fs_d.value;
+	sp.rotationSpeedRandom	= params[PARAM_ROTATION_SPEED_RANDOM]->u.fs_d.value / 100.0;
 	sp.opacity			= params[PARAM_OPACITY]->u.fs_d.value / 100.0;
 	sp.opacityOverLife	= params[PARAM_OPACITY_OVER_LIFE]->u.pd.value;
 

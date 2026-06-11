@@ -58,6 +58,8 @@ struct Particle {
 	double birthTime;
 	double life;
 	double baseSize;
+	double angle0;		// initial sprite angle (degrees)
+	double angleSpeed;	// sprite spin (deg/sec)
 	double r0, g0, b0;	// birth colour
 	double r1, g1, b1;	// death colour
 	double opacityScale;
@@ -225,6 +227,11 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 			pt.birthTime = t;
 			pt.life      = std::max(0.01, p.life * (1.0 + rng.signed1() * p.lifeRandom));
 			pt.baseSize  = std::max(0.0, p.size * (1.0 + rng.signed1() * p.sizeRandom));
+
+			// Rotation draws are appended *after* the existing ones so that a
+			// given seed keeps producing the same positions/velocities/sizes.
+			pt.angle0     = p.rotation + rng.signed1() * p.rotationRandom * 180.0;
+			pt.angleSpeed = p.rotationSpeed * (1.0 + rng.signed1() * p.rotationSpeedRandom);
 
 			pt.r0 = p.colorBirth[0]; pt.g0 = p.colorBirth[1]; pt.b0 = p.colorBirth[2];
 			pt.r1 = p.colorDeath[0]; pt.g1 = p.colorDeath[1]; pt.b1 = p.colorDeath[2];
@@ -403,6 +410,7 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = p.particleType;
 		rp.depth = pt.pz;
+		rp.angle = (pt.angle0 + pt.angleSpeed * age) * kPi / 180.0;
 		rp.texSampleTime = TexSampleTime(p, pt.id, age);
 
 		if (rp.radius < 0.25) continue;
@@ -434,6 +442,7 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = kParticle_GlowSphere;
 		rp.depth = c.pz;
+		rp.angle = 0.0;
 		rp.texSampleTime = -1.0;
 
 		if (rp.radius < 0.25) continue;

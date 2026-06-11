@@ -80,6 +80,10 @@ struct SimParams {
 	double  size;						// px
 	double  sizeRandom;					// 0..1
 	int     sizeOverLife;				// LifeCurve
+	double  rotation;					// initial sprite angle, degrees
+	double  rotationRandom;				// 0..1 randomises the initial angle
+	double  rotationSpeed;				// deg/sec (may be negative)
+	double  rotationSpeedRandom;		// 0..1 randomises the spin rate
 	double  opacity;					// 0..1
 	int     opacityOverLife;			// LifeCurve
 	double  colorBirth[3];				// 0..1 rgb
@@ -121,6 +125,7 @@ struct RParticle {
 	double  a;			// 0..1 opacity
 	int     type;		// ParticleType
 	double  depth;		// camera-space Z (for back-to-front sorting)
+	double  angle;		// sprite rotation in radians (Texture / Star)
 	double  texSampleTime;	// Texture: source time to sample, in seconds
 							// (<0 = sample the current comp frame)
 };
