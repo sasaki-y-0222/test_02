@@ -112,17 +112,38 @@ static PF_Err AddPopup(
 	A_short numChoices,
 	A_short dflt,
 	const char *choices,
-	A_long id)
+	A_long id,
+	A_long flags = 0)
 {
 	PF_ParamDef def;
 	AEFX_CLR_STRUCT(def);
 	def.param_type	= PF_Param_POPUP;
+	def.flags		= flags;
 	PF_STRCPY(def.name, name);
 	def.uu.id		= id;
 	def.u.pd.num_choices	= numChoices;
 	def.u.pd.dephault		= dflt;
 	def.u.pd.value			= dflt;
 	def.u.pd.u.namesptr		= choices;
+	return PF_ADD_PARAM(in_data, -1, &def);
+}
+
+static PF_Err AddGroupStart(PF_InData *in_data, const char *name, A_long id)
+{
+	PF_ParamDef def;
+	AEFX_CLR_STRUCT(def);
+	def.param_type	= PF_Param_GROUP_START;
+	PF_STRCPY(def.name, name);
+	def.uu.id		= id;
+	return PF_ADD_PARAM(in_data, -1, &def);
+}
+
+static PF_Err AddGroupEnd(PF_InData *in_data, A_long id)
+{
+	PF_ParamDef def;
+	AEFX_CLR_STRUCT(def);
+	def.param_type	= PF_Param_GROUP_END;
+	def.uu.id		= id;
 	return PF_ADD_PARAM(in_data, -1, &def);
 }
 
@@ -156,9 +177,14 @@ static PF_Err GlobalSetup(
 	// NON_PARAM_VARY: output depends on time, so AE must re-render per frame.
 	// DEEP_COLOR_AWARE: we support 16-bpc.
 	// PIX_INDEPENDENT: each output pixel is computed independently.
-	out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE |
-						   PF_OutFlag_NON_PARAM_VARY  |
-						   PF_OutFlag_PIX_INDEPENDENT;
+	// SEND_UPDATE_PARAMS_UI: lets us refresh the enable/disable state of the
+	//   Emitter Size controls (driven by Emitter Type) on load and scrub.
+	// NOTE: keep PF_Effect_Global_OutFlags in ParticleForgePiPL.r in sync with
+	//   this value (currently 0x06000404).
+	out_data->out_flags  = PF_OutFlag_DEEP_COLOR_AWARE			|
+						   PF_OutFlag_NON_PARAM_VARY			|
+						   PF_OutFlag_PIX_INDEPENDENT			|
+						   PF_OutFlag_SEND_UPDATE_PARAMS_UI;
 	out_data->out_flags2 = PF_OutFlag2_NONE;
 
 	return PF_Err_NONE;
@@ -171,8 +197,14 @@ static PF_Err ParamsSetup(
 	PF_Err err = PF_Err_NONE;
 
 	// ---- Emitter ----------------------------------------------------------
+	err |= AddGroupStart(in_data, "Emitter", ID_EMITTER_GROUP);
 	err |= AddFloat(in_data, "Particles / sec", 0, 100000, 0, 5000, 1000, 0, ID_PARTICLES_SEC);
-	err |= AddPopup(in_data, "Emitter Type", 3, pf::kEmitter_Point, EMITTER_TYPE_CHOICES, ID_EMITTER_TYPE);
+	// SUPERVISE so we receive PF_Cmd_USER_CHANGED_PARAM and can gray out the
+	// Emitter Size controls when the emitter is a (dimensionless) Point.
+	err |= AddPopup(in_data, "Emitter Type", 3, pf::kEmitter_Point, EMITTER_TYPE_CHOICES, ID_EMITTER_TYPE, PF_ParamFlag_SUPERVISE);
+	err |= AddFloat(in_data, "Emitter Size X", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_X);
+	err |= AddFloat(in_data, "Emitter Size Y", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_Y);
+	err |= AddFloat(in_data, "Emitter Size Z", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_Z);
 	err |= AddPoint(in_data, "Position XY", 50, 50, ID_POSITION);
 	err |= AddFloat(in_data, "Position Z", -5000, 5000, -1000, 1000, 0, 1, ID_POSITION_Z);
 	err |= AddAngle(in_data, "Direction", 0, ID_DIRECTION);
@@ -180,11 +212,10 @@ static PF_Err ParamsSetup(
 	err |= AddFloat(in_data, "Velocity", 0, 10000, 0, 1000, 150, 1, ID_VELOCITY);
 	err |= AddFloat(in_data, "Velocity Random", 0, 100, 0, 100, 30, 1, ID_VELOCITY_RANDOM);
 	err |= AddFloat(in_data, "Velocity Distribution", 0, 100, 0, 100, 50, 1, ID_VELOCITY_DISTRIB);
-	err |= AddFloat(in_data, "Emitter Size X", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_X);
-	err |= AddFloat(in_data, "Emitter Size Y", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_Y);
-	err |= AddFloat(in_data, "Emitter Size Z", 0, 10000, 0, 2000, 50, 1, ID_EMITTER_SIZE_Z);
+	err |= AddGroupEnd(in_data, ID_EMITTER_GROUP_END);
 
 	// ---- Particle ---------------------------------------------------------
+	err |= AddGroupStart(in_data, "Particle", ID_PARTICLE_GROUP);
 	err |= AddFloat(in_data, "Life [sec]", 0.05, 60, 0.05, 10, 3.0, 2, ID_LIFE);
 	err |= AddFloat(in_data, "Life Random", 0, 100, 0, 100, 20, 1, ID_LIFE_RANDOM);
 	err |= AddPopup(in_data, "Particle Type", 3, pf::kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
@@ -196,8 +227,10 @@ static PF_Err ParamsSetup(
 	err |= AddColor(in_data, "Birth Color", 255, 220, 120, ID_COLOR_BIRTH);
 	err |= AddColor(in_data, "Death Color", 200, 40, 30, ID_COLOR_DEATH);
 	err |= AddPopup(in_data, "Blend Mode", 3, pf::kBlend_Add, BLEND_MODE_CHOICES, ID_BLEND_MODE);
+	err |= AddGroupEnd(in_data, ID_PARTICLE_GROUP_END);
 
 	// ---- Physics ----------------------------------------------------------
+	err |= AddGroupStart(in_data, "Physics", ID_PHYSICS_GROUP);
 	err |= AddFloat(in_data, "Gravity", -5000, 5000, -500, 500, 0, 1, ID_GRAVITY);
 	err |= AddFloat(in_data, "Air Resistance", 0, 50, 0, 10, 0, 2, ID_AIR_RESISTANCE);
 	err |= AddFloat(in_data, "Wind X", -5000, 5000, -500, 500, 0, 1, ID_WIND_X);
@@ -206,11 +239,44 @@ static PF_Err ParamsSetup(
 	err |= AddFloat(in_data, "Turbulence Amount", 0, 10000, 0, 2000, 0, 1, ID_TURB_AMOUNT);
 	err |= AddFloat(in_data, "Turbulence Scale", 0.0001, 0.05, 0.0005, 0.02, 0.004, 4, ID_TURB_SCALE);
 	err |= AddFloat(in_data, "Turbulence Evolution", -10000, 10000, 0, 100, 0, 2, ID_TURB_EVOLUTION);
+	err |= AddGroupEnd(in_data, ID_PHYSICS_GROUP_END);
 
 	// ---- Global -----------------------------------------------------------
+	err |= AddGroupStart(in_data, "Global", ID_GLOBAL_GROUP);
 	err |= AddFloat(in_data, "Random Seed", 0, 100000, 0, 1000, 12345, 0, ID_RANDOM_SEED);
+	err |= AddGroupEnd(in_data, ID_GLOBAL_GROUP_END);
 
 	out_data->num_params = PARAM_NUM_PARAMS;
+	return err;
+}
+
+// ---------------------------------------------------------------------------
+// Parameter supervision: gray out the Emitter Size controls when the emitter
+// is a Point (those dimensions are meaningless for a point source).
+// ---------------------------------------------------------------------------
+
+static PF_Err UpdateEmitterSizeUI(
+	PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *params[])
+{
+	PF_Err err = PF_Err_NONE;
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+
+	const bool disable = (params[PARAM_EMITTER_TYPE]->u.pd.value == pf::kEmitter_Point);
+
+	const int sizeParams[3] = {
+		PARAM_EMITTER_SIZE_X, PARAM_EMITTER_SIZE_Y, PARAM_EMITTER_SIZE_Z };
+
+	for (int i = 0; i < 3; ++i) {
+		PF_ParamDef *p = params[sizeParams[i]];
+		PF_ParamUIFlags before = p->ui_flags;
+		if (disable) p->ui_flags |=  PF_PUI_DISABLED;
+		else         p->ui_flags &= ~PF_PUI_DISABLED;
+		if (p->ui_flags != before) {
+			err = suites.ParamUtilsSuite3()->PF_UpdateParamUI(
+					in_data->effect_ref, sizeParams[i], p);
+			if (err) break;
+		}
+	}
 	return err;
 }
 
@@ -468,6 +534,10 @@ DllExport PF_Err EffectMain(
 				break;
 			case PF_Cmd_RENDER:
 				err = Render(in_data, out_data, params, output);
+				break;
+			case PF_Cmd_USER_CHANGED_PARAM:
+			case PF_Cmd_UPDATE_PARAMS_UI:
+				err = UpdateEmitterSizeUI(in_data, out_data, params);
 				break;
 			default:
 				break;

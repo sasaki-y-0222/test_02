@@ -7,10 +7,11 @@
 
 	The Global_OutFlags / OutFlags_2 values below MUST match those set in
 	GlobalSetup() in ParticleForge.cpp:
-		out_flags  = PF_OutFlag_DEEP_COLOR_AWARE  (1<<25 = 0x02000000)
-				   | PF_OutFlag_NON_PARAM_VARY    (1<<2  = 0x00000004)
-				   | PF_OutFlag_PIX_INDEPENDENT   (1<<10 = 0x00000400)
-				   => 0x02000404
+		out_flags  = PF_OutFlag_DEEP_COLOR_AWARE       (1<<25 = 0x02000000)
+				   | PF_OutFlag_NON_PARAM_VARY         (1<<2  = 0x00000004)
+				   | PF_OutFlag_PIX_INDEPENDENT        (1<<10 = 0x00000400)
+				   | PF_OutFlag_SEND_UPDATE_PARAMS_UI  (1<<26 = 0x04000000)
+				   => 0x06000404
 		out_flags2 = 0
 */
 
@@ -69,7 +70,7 @@ resource 'PiPL' (16000) {
 		},
 		/* [10] */
 		AE_Effect_Global_OutFlags {
-			0x02000404
+			0x06000404
 		},
 		AE_Effect_Global_OutFlags_2 {
 			0x00000000

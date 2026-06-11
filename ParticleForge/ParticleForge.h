@@ -44,12 +44,19 @@
 // Parameter indices. Order here MUST match the order parameters are added in
 // ParamsSetup() and matches the layout of the params[] array at render time.
 
+// UI order. GROUP_START/END topic markers are real params and occupy slots in
+// the params[] array, so they get their own PARAM_* entries here. Render() only
+// reads the value-bearing entries; it never touches the group markers.
 enum {
 	PARAM_INPUT = 0,
 
 	// --- Emitter -----------------------------------------------------------
+	PARAM_EMITTER_GROUP,		// GROUP_START
 	PARAM_PARTICLES_SEC,
-	PARAM_EMITTER_TYPE,
+	PARAM_EMITTER_TYPE,			// SUPERVISE: grays out Emitter Size when Point
+	PARAM_EMITTER_SIZE_X,		// moved up: right after Emitter Type
+	PARAM_EMITTER_SIZE_Y,
+	PARAM_EMITTER_SIZE_Z,
 	PARAM_POSITION,				// PF_Param_POINT  (XY)
 	PARAM_POSITION_Z,
 	PARAM_DIRECTION,			// PF_Param_ANGLE
@@ -57,11 +64,10 @@ enum {
 	PARAM_VELOCITY,
 	PARAM_VELOCITY_RANDOM,
 	PARAM_VELOCITY_DISTRIB,
-	PARAM_EMITTER_SIZE_X,
-	PARAM_EMITTER_SIZE_Y,
-	PARAM_EMITTER_SIZE_Z,
+	PARAM_EMITTER_GROUP_END,	// GROUP_END
 
 	// --- Particle ----------------------------------------------------------
+	PARAM_PARTICLE_GROUP,		// GROUP_START
 	PARAM_LIFE,
 	PARAM_LIFE_RANDOM,
 	PARAM_PARTICLE_TYPE,
@@ -73,8 +79,10 @@ enum {
 	PARAM_COLOR_BIRTH,
 	PARAM_COLOR_DEATH,
 	PARAM_BLEND_MODE,
+	PARAM_PARTICLE_GROUP_END,	// GROUP_END
 
 	// --- Physics -----------------------------------------------------------
+	PARAM_PHYSICS_GROUP,		// GROUP_START
 	PARAM_GRAVITY,
 	PARAM_AIR_RESISTANCE,
 	PARAM_WIND_X,
@@ -83,15 +91,19 @@ enum {
 	PARAM_TURB_AMOUNT,
 	PARAM_TURB_SCALE,
 	PARAM_TURB_EVOLUTION,
+	PARAM_PHYSICS_GROUP_END,	// GROUP_END
 
 	// --- Global ------------------------------------------------------------
+	PARAM_GLOBAL_GROUP,			// GROUP_START
 	PARAM_RANDOM_SEED,
+	PARAM_GLOBAL_GROUP_END,		// GROUP_END
 
 	PARAM_NUM_PARAMS
 };
 
 // Persistent ("disk") IDs. Never reorder/reuse these once shipped or saved
 // projects will read the wrong values. They are independent of UI order.
+// IDs 1..32 are the original 1.5 shipping set; anything new is APPENDED.
 enum {
 	ID_PARTICLES_SEC = 1,
 	ID_EMITTER_TYPE,
@@ -124,7 +136,17 @@ enum {
 	ID_TURB_AMOUNT,
 	ID_TURB_SCALE,
 	ID_TURB_EVOLUTION,
-	ID_RANDOM_SEED
+	ID_RANDOM_SEED,				// = 32 (last of the original set)
+
+	// --- appended after 1.5 shipping; never reorder/reuse -----------------
+	ID_EMITTER_GROUP = 33,
+	ID_EMITTER_GROUP_END,
+	ID_PARTICLE_GROUP,
+	ID_PARTICLE_GROUP_END,
+	ID_PHYSICS_GROUP,
+	ID_PHYSICS_GROUP_END,
+	ID_GLOBAL_GROUP,
+	ID_GLOBAL_GROUP_END
 };
 
 // Popup string lists (1-based)
