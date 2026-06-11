@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\Works\Github\test_02\ParticleForge\build\CMakeFiles\acb79ecaf2efa93de4c76e836d0af58f\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{FE6F1CFA-E089-38EB-9BC7-2F4ABE66D241}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

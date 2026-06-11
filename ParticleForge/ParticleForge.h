@@ -19,10 +19,11 @@
 #include "Param_Utils.h"
 #include "AE_EffectCBSuites.h"
 #include "AE_GeneralPlug.h"
-#include "AEFX_ChannelDepthTbl.h"
+// #include "AEFX_ChannelDepthTbl.h"
 #include "AEGP_SuiteHandler.h"
 
 #ifdef AE_OS_WIN
+	#define NOMINMAX
 	#include <Windows.h>
 #endif
 

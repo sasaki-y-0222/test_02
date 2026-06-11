@@ -172,7 +172,7 @@ static PF_Err ParamsSetup(
 
 	// ---- Emitter ----------------------------------------------------------
 	err |= AddFloat(in_data, "Particles / sec", 0, 100000, 0, 5000, 1000, 0, ID_PARTICLES_SEC);
-	err |= AddPopup(in_data, "Emitter Type", 3, kEmitter_Point, EMITTER_TYPE_CHOICES, ID_EMITTER_TYPE);
+	err |= AddPopup(in_data, "Emitter Type", 3, pf::kEmitter_Point, EMITTER_TYPE_CHOICES, ID_EMITTER_TYPE);
 	err |= AddPoint(in_data, "Position XY", 50, 50, ID_POSITION);
 	err |= AddFloat(in_data, "Position Z", -5000, 5000, -1000, 1000, 0, 1, ID_POSITION_Z);
 	err |= AddAngle(in_data, "Direction", 0, ID_DIRECTION);
@@ -187,15 +187,15 @@ static PF_Err ParamsSetup(
 	// ---- Particle ---------------------------------------------------------
 	err |= AddFloat(in_data, "Life [sec]", 0.05, 60, 0.05, 10, 3.0, 2, ID_LIFE);
 	err |= AddFloat(in_data, "Life Random", 0, 100, 0, 100, 20, 1, ID_LIFE_RANDOM);
-	err |= AddPopup(in_data, "Particle Type", 3, kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
+	err |= AddPopup(in_data, "Particle Type", 3, pf::kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
 	err |= AddFloat(in_data, "Size", 0, 500, 0, 100, 12, 1, ID_SIZE);
 	err |= AddFloat(in_data, "Size Random", 0, 100, 0, 100, 30, 1, ID_SIZE_RANDOM);
-	err |= AddPopup(in_data, "Size over Life", 5, kCurve_Constant, SIZE_CURVE_CHOICES, ID_SIZE_OVER_LIFE);
+	err |= AddPopup(in_data, "Size over Life", 5, pf::kCurve_Constant, SIZE_CURVE_CHOICES, ID_SIZE_OVER_LIFE);
 	err |= AddFloat(in_data, "Opacity", 0, 100, 0, 100, 100, 1, ID_OPACITY);
-	err |= AddPopup(in_data, "Opacity over Life", 5, kCurve_FadeOut, OPACITY_CURVE_CHOICES, ID_OPACITY_OVER_LIFE);
+	err |= AddPopup(in_data, "Opacity over Life", 5, pf::kCurve_FadeOut, OPACITY_CURVE_CHOICES, ID_OPACITY_OVER_LIFE);
 	err |= AddColor(in_data, "Birth Color", 255, 220, 120, ID_COLOR_BIRTH);
 	err |= AddColor(in_data, "Death Color", 200, 40, 30, ID_COLOR_DEATH);
-	err |= AddPopup(in_data, "Blend Mode", 3, kBlend_Add, BLEND_MODE_CHOICES, ID_BLEND_MODE);
+	err |= AddPopup(in_data, "Blend Mode", 3, pf::kBlend_Add, BLEND_MODE_CHOICES, ID_BLEND_MODE);
 
 	// ---- Physics ----------------------------------------------------------
 	err |= AddFloat(in_data, "Gravity", -5000, 5000, -500, 500, 0, 1, ID_GRAVITY);

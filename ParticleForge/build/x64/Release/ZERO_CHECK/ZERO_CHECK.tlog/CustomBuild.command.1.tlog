@@ -1,0 +1,10 @@
+^D:\WORKS\GITHUB\TEST_02\PARTICLEFORGE\BUILD\CMAKEFILES\ACB79ECAF2EFA93DE4C76E836D0AF58F\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/Works/Github/test_02/ParticleForge -BD:/Works/Github/test_02/ParticleForge/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Works/Github/test_02/ParticleForge/build/ParticleForge.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -1,0 +1,22 @@
+^D:\WORKS\GITHUB\TEST_02\PARTICLEFORGE\BUILD\CMAKEFILES\C22C24E667603D8278F6432DFDF79340\PARTICLEFORGEPIPL.RC.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\cl.exe" /EP /I D:\10_AE_Plugin\AdobeSDK\AfterEffectsSDK/Examples/Headers /DMSWindows=1 D:/Works/Github/test_02/ParticleForge/ParticleForgePiPL.r > D:/Works/Github/test_02/ParticleForge/build/ParticleForgePiPL.rr
+if %errorlevel% neq 0 goto :cmEnd
+D:\10_AE_Plugin\AdobeSDK\AfterEffectsSDK\Examples\Resources\PiPLtool.exe D:/Works/Github/test_02/ParticleForge/build/ParticleForgePiPL.rr D:/Works/Github/test_02/ParticleForge/build/ParticleForgePiPL.rc
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\WORKS\GITHUB\TEST_02\PARTICLEFORGE\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/Works/Github/test_02/ParticleForge -BD:/Works/Github/test_02/ParticleForge/build --check-stamp-file D:/Works/Github/test_02/ParticleForge/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
