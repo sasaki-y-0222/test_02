@@ -128,6 +128,17 @@ static PF_Err AddPopup(
 	return PF_ADD_PARAM(in_data, -1, &def);
 }
 
+static PF_Err AddLayer(PF_InData *in_data, const char *name, A_long id)
+{
+	PF_ParamDef def;
+	AEFX_CLR_STRUCT(def);
+	def.param_type	= PF_Param_LAYER;
+	PF_STRCPY(def.name, name);
+	def.uu.id		= id;
+	def.u.ld.dephault = PF_LayerDefault_NONE;	// no layer selected by default
+	return PF_ADD_PARAM(in_data, -1, &def);
+}
+
 static PF_Err AddGroupStart(PF_InData *in_data, const char *name, A_long id)
 {
 	PF_ParamDef def;
@@ -218,7 +229,8 @@ static PF_Err ParamsSetup(
 	err |= AddGroupStart(in_data, "Particle", ID_PARTICLE_GROUP);
 	err |= AddFloat(in_data, "Life [sec]", 0.05, 60, 0.05, 10, 3.0, 2, ID_LIFE);
 	err |= AddFloat(in_data, "Life Random", 0, 100, 0, 100, 20, 1, ID_LIFE_RANDOM);
-	err |= AddPopup(in_data, "Particle Type", 3, pf::kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
+	err |= AddPopup(in_data, "Particle Type", 4, pf::kParticle_GlowSphere, PARTICLE_TYPE_CHOICES, ID_PARTICLE_TYPE);
+	err |= AddLayer(in_data, "Texture Layer", ID_TEXTURE_LAYER);
 	err |= AddFloat(in_data, "Size", 0, 500, 0, 100, 12, 1, ID_SIZE);
 	err |= AddFloat(in_data, "Size Random", 0, 100, 0, 100, 30, 1, ID_SIZE_RANDOM);
 	err |= AddPopup(in_data, "Size over Life", 5, pf::kCurve_Constant, SIZE_CURVE_CHOICES, ID_SIZE_OVER_LIFE);
@@ -355,10 +367,7 @@ static void DrawParticle(PF_LayerDef *out, const pf::RParticle &p, int blendMode
 				cov = p.radius + 0.5 - dist;	// 1px anti-aliased edge
 				if (cov <= 0.0) continue;
 				if (cov > 1.0) cov = 1.0;
-			} else if (p.type == pf::kParticle_GlowSphere) {
-				cov = std::exp(-dist2 / twoSigma2);
-				if (cov < 0.004) continue;
-			} else { // Star: glow core + axial spikes
+			} else if (p.type == pf::kParticle_Star) {	// glow core + axial spikes
 				double base = std::exp(-dist2 / twoSigma2);
 				double sc   = s * 0.30 + 0.5;
 				double spx  = std::exp(-(dy * dy) / (2.0 * sc * sc)) *
@@ -366,6 +375,9 @@ static void DrawParticle(PF_LayerDef *out, const pf::RParticle &p, int blendMode
 				double spy  = std::exp(-(dx * dx) / (2.0 * sc * sc)) *
 							  std::exp(-std::fabs(dy) / (p.radius * 1.2 + 1.0));
 				cov = std::max(base, std::max(spx, spy));
+				if (cov < 0.004) continue;
+			} else {	// GlowSphere, or Texture with no layer selected (fallback)
+				cov = std::exp(-dist2 / twoSigma2);
 				if (cov < 0.004) continue;
 			}
 
@@ -405,6 +417,137 @@ static void DrawParticle(PF_LayerDef *out, const pf::RParticle &p, int blendMode
 			px.alpha = (typename std::remove_reference<decltype(px.alpha)>::type)(Clampd(ea, 0.0, 1.0) * maxv + 0.5);
 		}
 	}
+}
+
+// Bilinear sample a layer world (premultiplied) at floating pixel (fx, fy).
+// Channels are returned normalised to 0..1; the rgb stays premultiplied.
+template <typename PixT>
+static void SampleBilinear(const PF_LayerDef *w, double fx, double fy, double maxv,
+						   double &r, double &g, double &b, double &a)
+{
+	const A_long W = w->width, H = w->height;
+	if (W <= 0 || H <= 0) { r = g = b = a = 0.0; return; }
+
+	if (fx < 0.0) fx = 0.0; else if (fx > W - 1) fx = (double)(W - 1);
+	if (fy < 0.0) fy = 0.0; else if (fy > H - 1) fy = (double)(H - 1);
+
+	const A_long x0 = (A_long)std::floor(fx);
+	const A_long y0 = (A_long)std::floor(fy);
+	const A_long x1 = std::min<A_long>(x0 + 1, W - 1);
+	const A_long y1 = std::min<A_long>(y0 + 1, H - 1);
+	const double tx = fx - x0;
+	const double ty = fy - y0;
+
+	auto at = [&](A_long x, A_long y) -> const PixT* {
+		return reinterpret_cast<const PixT*>(
+			reinterpret_cast<const char*>(w->data) + (size_t)y * w->rowbytes) + x;
+	};
+	const PixT *p00 = at(x0, y0), *p10 = at(x1, y0);
+	const PixT *p01 = at(x0, y1), *p11 = at(x1, y1);
+
+	const double inv = 1.0 / maxv;
+	auto mix = [](double u, double v, double t){ return u + (v - u) * t; };
+
+	r = mix(mix(p00->red   * inv, p10->red   * inv, tx), mix(p01->red   * inv, p11->red   * inv, tx), ty);
+	g = mix(mix(p00->green * inv, p10->green * inv, tx), mix(p01->green * inv, p11->green * inv, tx), ty);
+	b = mix(mix(p00->blue  * inv, p10->blue  * inv, tx), mix(p01->blue  * inv, p11->blue  * inv, tx), ty);
+	a = mix(mix(p00->alpha * inv, p10->alpha * inv, tx), mix(p01->alpha * inv, p11->alpha * inv, tx), ty);
+}
+
+// Composite a Texture particle: the layer 'tex' is mapped onto the particle's
+// square footprint (side = diameter) and sampled bilinearly. The texel alpha is
+// respected, the per-particle opacity scales it, and the life colour (Birth ->
+// Death) multiplies the texel as a tint. Both worlds share the same bit depth.
+template <typename PixT>
+static void DrawParticleTexture(PF_LayerDef *out, const PF_LayerDef *tex,
+								const pf::RParticle &p, int blendMode, double maxv)
+{
+	const double rad  = p.radius;
+	const double diam = 2.0 * rad;
+	if (diam <= 0.0) return;
+
+	const double left = p.x - rad;
+	const double top  = p.y - rad;
+	const double ext  = rad + 1.0;
+
+	A_long x0 = (A_long)std::floor(p.x - ext);
+	A_long x1 = (A_long)std::ceil (p.x + ext);
+	A_long y0 = (A_long)std::floor(p.y - ext);
+	A_long y1 = (A_long)std::ceil (p.y + ext);
+
+	if (x1 < 0 || y1 < 0 || x0 >= out->width || y0 >= out->height) return;
+	x0 = std::max<A_long>(x0, 0);
+	y0 = std::max<A_long>(y0, 0);
+	x1 = std::min<A_long>(x1, out->width  - 1);
+	y1 = std::min<A_long>(y1, out->height - 1);
+
+	const double texMaxX = (double)(tex->width  - 1);
+	const double texMaxY = (double)(tex->height - 1);
+
+	for (A_long y = y0; y <= y1; ++y) {
+		PixT *outRow = reinterpret_cast<PixT*>(
+			reinterpret_cast<char*>(out->data) + (size_t)y * out->rowbytes);
+		const double v = ((y + 0.5) - top) / diam;
+		if (v < 0.0 || v > 1.0) continue;
+
+		for (A_long x = x0; x <= x1; ++x) {
+			const double u = ((x + 0.5) - left) / diam;
+			if (u < 0.0 || u > 1.0) continue;
+
+			double tr, tg, tb, ta;
+			SampleBilinear<PixT>(tex, u * texMaxX, v * texMaxY, maxv, tr, tg, tb, ta);
+
+			// premultiplied source scaled by particle opacity & tinted by life colour
+			double srcA = ta * p.a;
+			if (srcA <= 0.0) continue;
+			double sr = tr * p.r * p.a;
+			double sg = tg * p.g * p.a;
+			double sb = tb * p.b * p.a;
+
+			PixT &px = outRow[x];
+			double er = px.red   / maxv;
+			double eg = px.green / maxv;
+			double eb = px.blue  / maxv;
+			double ea = px.alpha / maxv;
+
+			switch (blendMode) {
+				case pf::kBlend_Normal:
+					er = er * (1.0 - srcA) + sr;
+					eg = eg * (1.0 - srcA) + sg;
+					eb = eb * (1.0 - srcA) + sb;
+					break;
+				case pf::kBlend_Screen:
+					er = 1.0 - (1.0 - er) * (1.0 - sr);
+					eg = 1.0 - (1.0 - eg) * (1.0 - sg);
+					eb = 1.0 - (1.0 - eb) * (1.0 - sb);
+					break;
+				case pf::kBlend_Add:
+				default:
+					er += sr;
+					eg += sg;
+					eb += sb;
+					break;
+			}
+			ea = ea + srcA * (1.0 - ea);
+
+			px.red   = (typename std::remove_reference<decltype(px.red)>::type)(Clampd(er, 0.0, 1.0) * maxv + 0.5);
+			px.green = (typename std::remove_reference<decltype(px.green)>::type)(Clampd(eg, 0.0, 1.0) * maxv + 0.5);
+			px.blue  = (typename std::remove_reference<decltype(px.blue)>::type)(Clampd(eb, 0.0, 1.0) * maxv + 0.5);
+			px.alpha = (typename std::remove_reference<decltype(px.alpha)>::type)(Clampd(ea, 0.0, 1.0) * maxv + 0.5);
+		}
+	}
+}
+
+// Dispatch one particle to the right compositor. Texture particles use the
+// checked-out layer; when none is set they fall back to DrawParticle (glow).
+template <typename PixT>
+static void CompositeParticle(PF_LayerDef *out, const PF_LayerDef *tex,
+							  const pf::RParticle &p, int blendMode, double maxv)
+{
+	if (p.type == pf::kParticle_Texture && tex && tex->data && tex->width > 0 && tex->height > 0)
+		DrawParticleTexture<PixT>(out, tex, p, blendMode, maxv);
+	else
+		DrawParticle<PixT>(out, p, blendMode, maxv);
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +630,23 @@ static PF_Err Render(
 	std::vector<pf::RParticle> particles;
 	pf::Simulate(sp, particles);
 
+	// --- check out the texture layer (only needed for Texture particles) ---
+	// The checked-out world shares the render's bit depth. If no layer is
+	// selected the checkout still succeeds but u.ld.data is NULL, in which case
+	// CompositeParticle() falls back to a Glow Sphere.
+	PF_ParamDef texParam;
+	AEFX_CLR_STRUCT(texParam);
+	bool texCheckedOut = false;
+	if (sp.particleType == pf::kParticle_Texture) {
+		PF_Err texErr = PF_CHECKOUT_PARAM(in_data, PARAM_TEXTURE_LAYER,
+								in_data->current_time, in_data->time_step,
+								in_data->time_scale, &texParam);
+		if (!texErr)
+			texCheckedOut = true;
+	}
+	const PF_LayerDef *tex =
+		(texCheckedOut && texParam.u.ld.data) ? &texParam.u.ld : NULL;
+
 	// --- build the output --------------------------------------------------
 	PF_LayerDef *input = &params[PARAM_INPUT]->u.ld;
 	bool deep = PF_WORLD_IS_DEEP(output);
@@ -496,14 +656,17 @@ static PF_Err Render(
 		CopyInput<PF_Pixel16>(input, output);
 		const double maxv = (double)PF_MAX_CHAN16;
 		for (const pf::RParticle &p : particles)
-			DrawParticle<PF_Pixel16>(output, p, sp.blendMode, maxv);
+			CompositeParticle<PF_Pixel16>(output, tex, p, sp.blendMode, maxv);
 	} else {
 		ClearWorld<PF_Pixel8>(output);
 		CopyInput<PF_Pixel8>(input, output);
 		const double maxv = (double)PF_MAX_CHAN8;
 		for (const pf::RParticle &p : particles)
-			DrawParticle<PF_Pixel8>(output, p, sp.blendMode, maxv);
+			CompositeParticle<PF_Pixel8>(output, tex, p, sp.blendMode, maxv);
 	}
+
+	if (texCheckedOut)
+		PF_CHECKIN_PARAM(in_data, &texParam);
 
 	return err;
 }

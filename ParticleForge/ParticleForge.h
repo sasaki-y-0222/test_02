@@ -71,6 +71,7 @@ enum {
 	PARAM_LIFE,
 	PARAM_LIFE_RANDOM,
 	PARAM_PARTICLE_TYPE,
+	PARAM_TEXTURE_LAYER,		// PF_Param_LAYER, used when type == Texture
 	PARAM_SIZE,
 	PARAM_SIZE_RANDOM,
 	PARAM_SIZE_OVER_LIFE,
@@ -146,12 +147,13 @@ enum {
 	ID_PHYSICS_GROUP,
 	ID_PHYSICS_GROUP_END,
 	ID_GLOBAL_GROUP,
-	ID_GLOBAL_GROUP_END
+	ID_GLOBAL_GROUP_END,
+	ID_TEXTURE_LAYER
 };
 
 // Popup string lists (1-based)
 #define EMITTER_TYPE_CHOICES	"Point|Box|Sphere"
-#define PARTICLE_TYPE_CHOICES	"Sphere|Glow Sphere|Star"
+#define PARTICLE_TYPE_CHOICES	"Sphere|Glow Sphere|Star|Texture"
 #define SIZE_CURVE_CHOICES		"Constant|Grow|Shrink|Grow then Shrink|Bell"
 #define OPACITY_CURVE_CHOICES	"Constant|Fade In|Fade Out|Fade In and Out|Bell"
 #define BLEND_MODE_CHOICES		"Add|Normal|Screen"

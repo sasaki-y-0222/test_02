@@ -29,7 +29,9 @@ enum EmitterType {
 enum ParticleType {
 	kParticle_Sphere     = 1,
 	kParticle_GlowSphere = 2,
-	kParticle_Star       = 3
+	kParticle_Star       = 3,
+	kParticle_Texture    = 4	// sprite sampled from a host layer (AE glue);
+								// falls back to GlowSphere when no layer is set
 };
 
 // Curve shapes used by "... over Life" controls
