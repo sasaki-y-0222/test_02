@@ -381,6 +381,37 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 	const double tNow = steps * dt;
 	out.reserve(live.size());
 
+	// Project a comp/world point (output-pixel space) to the screen. Returns the
+	// screen position, an on-screen size scale and camera-space depth; ok is
+	// false when the point is at/behind the camera and must be culled.
+	struct Proj { double x, y, scale, depth; bool ok; };
+	auto project = [&](double wx, double wy, double wz) -> Proj {
+		Proj r; r.ok = false; r.x = r.y = r.scale = r.depth = 0.0;
+		if (p.cameraMode == kCamera_Comp) {
+			const double* m = p.camView;	// row-major, point as row vector
+			double vx = wx*m[0] + wy*m[4] + wz*m[8]  + m[12];
+			double vy = wx*m[1] + wy*m[5] + wz*m[9]  + m[13];
+			double vz = wx*m[2] + wy*m[6] + wz*m[10] + m[14];
+			if (vz <= 1.0) return r;		// at / behind the camera
+			double sx = p.camFocalX / vz, sy = p.camFocalY / vz;
+			r.x = p.centerX + vx * sx;
+			r.y = p.centerY + vy * sy;
+			r.scale = 0.5 * (sx + sy);
+			r.depth = vz;
+			r.ok = true;
+		} else {							// built-in perspective camera
+			double denom = p.focalLength + wz;
+			if (denom <= 1.0) return r;
+			double scale = p.focalLength / denom;
+			r.x = p.centerX + (wx - p.centerX) * scale;
+			r.y = p.centerY + (wy - p.centerY) * scale;
+			r.scale = scale;
+			r.depth = wz;
+			r.ok = true;
+		}
+		return r;
+	};
+
 	for (const Particle& pt : live) {
 		if (!pt.alive) continue;
 		double age = tNow - pt.birthTime;
@@ -395,21 +426,19 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		double opa = pt.opacityScale * EvalCurve(f, p.opacityOverLife);
 		if (opa <= 0.0) continue;
 
-		// perspective projection around the optical centre
-		double denom = p.focalLength + pt.pz;
-		if (denom <= 1.0) continue;	// behind / at the camera
-		double scale = p.focalLength / denom;
+		Proj pr = project(pt.px, pt.py, pt.pz);
+		if (!pr.ok) continue;	// behind / at the camera
 
 		RParticle rp;
-		rp.x = p.centerX + (pt.px - p.centerX) * scale;
-		rp.y = p.centerY + (pt.py - p.centerY) * scale;
-		rp.radius = sizePx * scale * 0.5;	// size is diameter-ish
+		rp.x = pr.x;
+		rp.y = pr.y;
+		rp.radius = sizePx * pr.scale * 0.5;	// size is diameter-ish
 		rp.r = pt.r0 + (pt.r1 - pt.r0) * f;
 		rp.g = pt.g0 + (pt.g1 - pt.g0) * f;
 		rp.b = pt.b0 + (pt.b1 - pt.b0) * f;
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = p.particleType;
-		rp.depth = pt.pz;
+		rp.depth = pr.depth;
 		rp.angle = (pt.angle0 + pt.angleSpeed * age) * kPi / 180.0;
 		rp.texSampleTime = TexSampleTime(p, pt.id, age);
 
@@ -430,18 +459,17 @@ void Simulate(const SimParams& p, std::vector<RParticle>& out)
 		double opa = c.opacityScale * EvalCurve(f, kCurve_FadeOut);
 		if (opa <= 0.0) continue;
 
-		double denom = p.focalLength + c.pz;
-		if (denom <= 1.0) continue;
-		double scale = p.focalLength / denom;
+		Proj pr = project(c.px, c.py, c.pz);
+		if (!pr.ok) continue;
 
 		RParticle rp;
-		rp.x = p.centerX + (c.px - p.centerX) * scale;
-		rp.y = p.centerY + (c.py - p.centerY) * scale;
-		rp.radius = c.baseSize * scale * 0.5;
+		rp.x = pr.x;
+		rp.y = pr.y;
+		rp.radius = c.baseSize * pr.scale * 0.5;
 		rp.r = c.r; rp.g = c.g; rp.b = c.b;
 		rp.a = Clamp(opa, 0.0, 1.0);
 		rp.type = kParticle_GlowSphere;
-		rp.depth = c.pz;
+		rp.depth = pr.depth;
 		rp.angle = 0.0;
 		rp.texSampleTime = -1.0;
 

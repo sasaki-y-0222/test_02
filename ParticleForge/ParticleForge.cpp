@@ -284,6 +284,7 @@ static PF_Err ParamsSetup(
 
 	// ---- Global -----------------------------------------------------------
 	err |= AddGroupStart(in_data, "Global", ID_GLOBAL_GROUP);
+	err |= AddPopup(in_data, "Camera", 2, pf::kCamera_Internal, CAMERA_CHOICES, ID_CAMERA);
 	err |= AddFloat(in_data, "Random Seed", 0, 100000, 0, 1000, 12345, 0, ID_RANDOM_SEED);
 	err |= AddGroupEnd(in_data, ID_GLOBAL_GROUP_END);
 
@@ -593,6 +594,95 @@ static void CompositeParticle(PF_LayerDef *out, const PF_LayerDef *tex,
 
 static double FixedToDouble(PF_Fixed f) { return (double)f / 65536.0; }
 
+// General 4x4 inverse (row-major, point treated as a row vector so the
+// translation lives in row 3). Returns false for a (near-)singular matrix.
+static bool Invert4x4(const double m[16], double inv[16])
+{
+	inv[0]  =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+	inv[4]  = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+	inv[8]  =  m[4]*m[9]*m[15]  - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+	inv[12] = -m[4]*m[9]*m[14]  + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+	inv[1]  = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+	inv[5]  =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+	inv[9]  = -m[0]*m[9]*m[15]  + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+	inv[13] =  m[0]*m[9]*m[14]  - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+	inv[2]  =  m[1]*m[6]*m[15]  - m[1]*m[7]*m[14]  - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7]  - m[13]*m[3]*m[6];
+	inv[6]  = -m[0]*m[6]*m[15]  + m[0]*m[7]*m[14]  + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7]  + m[12]*m[3]*m[6];
+	inv[10] =  m[0]*m[5]*m[15]  - m[0]*m[7]*m[13]  - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7]  - m[12]*m[3]*m[5];
+	inv[14] = -m[0]*m[5]*m[14]  + m[0]*m[6]*m[13]  + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6]  + m[12]*m[2]*m[5];
+	inv[3]  = -m[1]*m[6]*m[11]  + m[1]*m[7]*m[10]  + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7]   + m[9]*m[3]*m[6];
+	inv[7]  =  m[0]*m[6]*m[11]  - m[0]*m[7]*m[10]  - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7]   - m[8]*m[3]*m[6];
+	inv[11] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
+	inv[15] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
+
+	double det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+	if (det > -1e-12 && det < 1e-12) return false;
+	det = 1.0 / det;
+	for (int i = 0; i < 16; ++i) inv[i] *= det;
+	return true;
+}
+
+// Build a world->view matrix (output-pixel space) and focal length from the
+// composition's active camera. Returns false (so the caller falls back to the
+// internal camera) if there is no camera or any AEGP query fails.
+//
+// NOTE: this SDK build has no AEGP_GetCompMostRecentlyUsedCamera /
+// AEGP_GetCameraZoom; AEGP_GetEffectCamera + AEGP_GetLayerToWorldXform + the
+// camera's ZOOM stream are the equivalent calls (see the SDK Resizer sample).
+// The camera matrix is camera->world, so we invert it. Particle world coords
+// are treated as composition space (assuming the effect layer is comp-aligned).
+static bool GetCompCameraView(
+	PF_InData *in_data, double dsx, double dsy, double ds,
+	double camView[16], double &camFocalX, double &camFocalY)
+{
+	try {
+		AEGP_SuiteHandler suites(in_data->pica_basicP);
+
+		A_Time comp_time = { 0, 1 };
+		A_Err e = suites.PFInterfaceSuite1()->AEGP_ConvertEffectToCompTime(
+					in_data->effect_ref, in_data->current_time, in_data->time_scale, &comp_time);
+		if (e) return false;
+
+		AEGP_LayerH cameraH = NULL;
+		e = suites.PFInterfaceSuite1()->AEGP_GetEffectCamera(
+					in_data->effect_ref, &comp_time, &cameraH);
+		if (e || !cameraH) return false;	// no camera -> internal
+
+		A_Matrix4 m;
+		e = suites.LayerSuite8()->AEGP_GetLayerToWorldXform(cameraH, &comp_time, &m);
+		if (e) return false;
+
+		AEGP_StreamVal zoom;
+		AEFX_CLR_STRUCT(zoom);
+		e = suites.StreamSuite2()->AEGP_GetLayerStreamValue(
+					cameraH, AEGP_LayerStream_ZOOM, AEGP_LTimeMode_CompTime,
+					&comp_time, FALSE, &zoom, NULL);
+		if (e) return false;
+
+		double focal = zoom.one_d;
+		if (focal <= 0.0) return false;
+
+		double a[16], inv[16];
+		for (int r = 0; r < 4; ++r)
+			for (int c = 0; c < 4; ++c)
+				a[r * 4 + c] = m.mat[r][c];
+		if (!Invert4x4(a, inv)) return false;
+
+		// Fold the downsample factor into the linear rows so the simulation can
+		// keep feeding output-pixel world coordinates (comp = output / scale).
+		const double s[3] = { dsx, dsy, ds };
+		for (int r = 0; r < 4; ++r)
+			for (int c = 0; c < 4; ++c)
+				camView[r * 4 + c] = (r < 3) ? inv[r * 4 + c] / s[r] : inv[r * 4 + c];
+
+		camFocalX = focal * dsx;	// screen scales with the output resolution
+		camFocalY = focal * dsy;
+		return true;
+	} catch (...) {
+		return false;				// missing suite / host without AEGP -> internal
+	}
+}
+
 static PF_Err Render(
 	PF_InData *in_data, PF_OutData *out_data,
 	PF_ParamDef *params[], PF_LayerDef *output)
@@ -680,6 +770,22 @@ static PF_Err Render(
 	sp.centerX = output->width  * 0.5;
 	sp.centerY = output->height * 0.5;
 	sp.focalLength = std::max<double>(output->width, output->height);
+
+	// Camera: built-in perspective by default; optionally use the comp's active
+	// camera. Any failure (no camera, host without AEGP, query error) silently
+	// falls back to the internal camera for backward compatibility.
+	sp.cameraMode = pf::kCamera_Internal;
+	sp.camFocalX = sp.camFocalY = 0.0;
+	if (params[PARAM_CAMERA]->u.pd.value == pf::kCamera_Comp &&
+		in_data->appl_id != 'PrMr') {
+		double camView[16], fx = 0.0, fy = 0.0;
+		if (GetCompCameraView(in_data, dsx, dsy, ds, camView, fx, fy)) {
+			sp.cameraMode = pf::kCamera_Comp;
+			for (int i = 0; i < 16; ++i) sp.camView[i] = camView[i];
+			sp.camFocalX = fx;
+			sp.camFocalY = fy;
+		}
+	}
 
 	// --- run the simulation ------------------------------------------------
 	std::vector<pf::RParticle> particles;

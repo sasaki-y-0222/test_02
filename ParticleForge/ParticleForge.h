@@ -111,6 +111,7 @@ enum {
 
 	// --- Global ------------------------------------------------------------
 	PARAM_GLOBAL_GROUP,			// GROUP_START
+	PARAM_CAMERA,				// Internal perspective vs. comp's active camera
 	PARAM_RANDOM_SEED,
 	PARAM_GLOBAL_GROUP_END,		// GROUP_END
 
@@ -176,7 +177,8 @@ enum {
 	ID_ROTATION,
 	ID_ROTATION_RANDOM,
 	ID_ROTATION_SPEED,
-	ID_ROTATION_SPEED_RANDOM
+	ID_ROTATION_SPEED_RANDOM,
+	ID_CAMERA
 };
 
 // Popup string lists (1-based)
@@ -186,6 +188,7 @@ enum {
 #define SIZE_CURVE_CHOICES		"Constant|Grow|Shrink|Grow then Shrink|Bell"
 #define OPACITY_CURVE_CHOICES	"Constant|Fade In|Fade Out|Fade In and Out|Bell"
 #define BLEND_MODE_CHOICES		"Add|Normal|Screen"
+#define CAMERA_CHOICES			"Internal|Comp Camera"
 
 #ifdef __cplusplus
 extern "C" {

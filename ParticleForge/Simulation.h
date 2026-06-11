@@ -49,6 +49,14 @@ enum BlendMode {
 	kBlend_Screen = 3
 };
 
+// Projection model. The internal camera is a fixed built-in perspective; the
+// comp camera uses a view matrix + focal length supplied by the AE glue (the
+// simulation stays SDK-free and just applies whatever matrix it is handed).
+enum CameraMode {
+	kCamera_Internal = 1,
+	kCamera_Comp     = 2
+};
+
 // How a Texture particle samples its source layer over time. The simulation
 // only decides *which source time* each particle wants (in seconds); the AE
 // glue is responsible for actually checking the layer out at that time.
@@ -114,7 +122,10 @@ struct SimParams {
 
 	// Projection
 	double  centerX, centerY;			// optical centre (output-pixel space)
-	double  focalLength;				// perspective focal length in px
+	double  focalLength;				// internal-camera focal length in px
+	int     cameraMode;					// CameraMode
+	double  camView[16];				// row-major world(output-px) -> view matrix
+	double  camFocalX, camFocalY;		// comp-camera focal length in px (per axis)
 };
 
 // A particle resolved to screen space, ready to be composited.
